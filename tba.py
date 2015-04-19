@@ -22,7 +22,8 @@
 #
 #
 from __future__ import print_function, division
-import sys
+import sys, pickle
+from os import path
 import requests
 DISTRICTEVENTSURL = "http://www.thebluealliance.com/api/v2/district/%(district)s/%(year)s/events"
 EVENTTEAMSURL =  "http://www.thebluealliance.com/api/v2/event/%(eventkey)s/teams"
@@ -34,10 +35,11 @@ HEADERS = {"X-TBA-App-Id":"brolliancebeta:rankings:1"}
 COMMANDS = {"list", "avg", "rank"}
 
 def tba_get(path):
-    #print(path)
     return requests.get(path, headers = HEADERS)
 
 class Team(object):
+    max_quals_avg = 0
+    max_elims_avg = 0
     def __init__(self, team_key):
         self.team_key = team_key
         self.team_number = int(team_key[3:])
@@ -49,6 +51,12 @@ class Team(object):
         self.ei_count = 0
         self.rookie_count = 0
         self.other_count = 0
+
+    def __str__(self):
+        return ",".join([str(self.team_number), str(self.norm_quals_avg()), \
+            str(self.norm_elims_avg()), str(self.ca_count), \
+            str(self.ei_count), str(self.rookie_count), str(self.other_count), \
+            str(self.ranking_score())])
 
     def populate_data(self):
         events = []
@@ -78,6 +86,11 @@ class Team(object):
                     self.rookie_count += 1
                 else:
                     self.other_count += 1
+        if self.quals_avg() > Team.max_quals_avg:
+            Team.max_quals_avg = self.quals_avg()
+        if self.elims_avg() > Team.max_elims_avg:
+            Team.max_elims_avg = self.elims_avg()
+
 
     def quals_avg(self):
         return self.quals_tot / self.quals_played
@@ -88,8 +101,14 @@ class Team(object):
         except:
             return 0
 
+    def norm_quals_avg(self):
+        return self.quals_avg() / Team.max_quals_avg
+
+    def norm_elims_avg(self):
+        return self.elims_avg() / Team.max_elims_avg
+
     def ranking_score(self):
-        return 0.4 * self.quals_avg() + 0.5 * self.elims_avg() + \
+        return 0.4 * self.norm_quals_avg() + 0.5 * self.norm_elims_avg() + \
             0.1 * self.ei_count + 0.2 * self.ca_count + \
             0.1 * self.rookie_count + 0.05 * self.other_count
 
@@ -103,10 +122,19 @@ def usage():
 def get_teams(eventcodes):
     teams = {}
     for event in eventcodes:
-        r = tba_get(EVENTTEAMSURL % {"eventkey" : event})
-        for team in r.json():
-            if team["key"] not in teams:
-                teams[team["key"]] = Team(team["key"])
+        eventteams = {}
+        if path.exists(event+".teams"):
+            with open(event+".teams", 'r') as f:
+               eventteams = pickle.load(f)
+        else:
+            r = tba_get(EVENTTEAMSURL % {"eventkey" : event})
+            for team in r.json():
+                if team["key"] not in teams:
+                    eventteams[team["key"]] = Team(team["key"])
+            with open(event+".teams", 'w') as f:
+                    pickle.dump(eventteams, f)
+        teams.update(eventteams)
+
     return teams
 
 
@@ -124,19 +152,20 @@ def main():
     else:
         events = sys.argv[2:]
     teams = get_teams(events)
+
     if command == "list":
         for team in sorted(teams.values(), lambda x, y : cmp(x.team_number, y.team_number)):
             print(team.team_number)
     elif command == "avg":
         for team in sorted(teams.values(), lambda x, y : cmp(x.team_number, y.team_number)):
             team.populate_data()
-            print(",".join([str(team.team_number), str(team.quals_avg()), str(team.elims_avg())]))
+            print(team)
     elif command == "rank":
         for i, team in enumerate(teams.values()):
             print("%.02d%%" % (i+1/len(teams)))
             team.populate_data()
-        for team in sorted(teams.values(), lambda x, y : cmp(-x.ranking_score(), -y.ranking_score())):
-            print(",".join([str(team.team_number), str(team.quals_avg()), str(team.elims_avg()), str(team.ranking_score())]))
+        for team in sorted(teams.values(), lambda x, y : cmp(x.ranking_score(), y.ranking_score()), reverse = True):
+            print(team)
 
 if __name__ == '__main__':
     try:
