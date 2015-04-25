@@ -78,9 +78,9 @@ class Team(object):
                     self.elims_played += 1
             r = tba_get(TEAMEVENTAWARDSURL % {"teamkey" : self.team_key, "eventkey" : event})
             for award in r.json():
-                if "Engineering Inspiration" in award["name"]:
+                if "Regional Engineering Inspiration Award" in award["name"]:
                     self.ei_count += 1
-                elif "Chairman's" in award["name"]:
+                elif "Regional Chairman's Award" in award["name"]:
                     self.ca_count += 1
                 elif "Rookie" in award["name"]:
                     self.rookie_count += 1
@@ -108,9 +108,12 @@ class Team(object):
         return self.elims_avg() / Team.max_elims_avg
 
     def ranking_score(self):
-        return 0.4 * self.norm_quals_avg() + 0.5 * self.norm_elims_avg() + \
-            0.1 * self.ei_count + 0.2 * self.ca_count + \
-            0.1 * self.rookie_count + 0.05 * self.other_count
+        return 0.2 * self.norm_quals_avg() + \
+            0.5 * self.norm_elims_avg() + \
+            0.1 * self.ei_count + \
+            0.15 * self.ca_count + \
+            0.03 * self.rookie_count + \
+            0.02 * self.other_count
 
 
 class NoSuchCommand(Exception):
